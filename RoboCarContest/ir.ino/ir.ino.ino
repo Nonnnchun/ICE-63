@@ -1,5 +1,5 @@
-const int sensorPins[5] = { A0, A1, A2, A3, A4};  // ขาเชื่อมต่อของเซ็นเซอร์ IR
-int sensorValues[5];                               // ตัวแปรเก็บค่าที่อ่านจากเซ็นเซอร์
+const int sensorPins[4] = { A0, A1, A2, A3};  // ขาเชื่อมต่อของเซ็นเซอร์ IR
+int sensorValues[4];                               // ตัวแปรเก็บค่าที่อ่านจากเซ็นเซอร์
 
 //--------------------IR Sensor-------------------------------
 
@@ -67,7 +67,7 @@ void loop() {
 
   // อ่านค่าจากเซ็นเซอร์ IR
   delay(10);
-  for (int i = 0; i < 5; i++) {
+  for (int i = 0; i < 4; i++) {
     Serial.print("\t\t");
     Serial.print("Sensor ");
     Serial.print(i);

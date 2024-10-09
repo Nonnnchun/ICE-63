@@ -287,7 +287,7 @@ void loop() {
   // แสดงค่าที่แสดงเป็น digital
   Serial.print("Digital values: ");
   for (int i = 0; i < 4; i++) {
-    Serial.print(digitalValues[i]);
+    Serial.print(sensorValues[i]);
     Serial.print("\t");
   }
   Serial.println();
