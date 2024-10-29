@@ -1,17 +1,24 @@
-
 //----------------------------------------------------------Tester Ep.1000000--------------------------------------------------------------
 
 // Arduino Line Follower Robot Code
-float Kp = 18.312, Ki = 0.012, Kd = 0.15;  //0.012 5
+const int photoResistorPin = A5;  // ขาเชื่อมต่อของ photoresistor
+const int trigPin = 12;           // ขา Trig
+const int echoPin = 13;           // ขา Echo
+float Kp = 16.5, Ki = 0.0, Kd = 1.2;  //0.012 5
 float error = 0, P = 0, I = 0, D = 0, PID_value = 0;
-// float I_max = 50;   // ค่าขีดจำกัดสูงสุดสำหรับ I
-// float I_min = -50;  // ค่าขีดจำกัดต่ำสุดสำหรับ I
+float I_max = -10;  // ค่าขีดจำกัดสูงสุดสำหรับ I
+float I_min = 10;   // ค่าขีดจำกัดต่ำสุดสำหรับ I
 float previous_error = 0;
+float previous_D = 0;  // เก็บค่า D ก่อนหน้าเพื่อใช้ใน low-pass filter
+float alpha = 0.1;     // ค่าคงที่สำหรับ low-pass filter (ระหว่าง 0 ถึง 1)
 int sensorValues[5];   // ตัวแปรเก็บค่าที่อ่านจากเซ็นเซอร์
 int digitalValues[5];  // ตัวแปรเก็บค่าที่แสดงเป็น digital (0 หรือ 1)
-int initial_moter_speed = 80;
+int initial_moter_speed = 100;
 
 unsigned long previousMillis = 0;  // ตัวแปรสำหรับเก็บเวลา
+unsigned long previousTime = 0;    // ตัวแปรสำหรับเก็บเวลา
+bool stop = false;
+bool slow = false;
 // const long interval = 2000;        // เวลาหน่วง (2000 มิลลิวินาที)
 
 void read_sensor_value(void);
@@ -38,23 +45,81 @@ void setup() {
   pinMode(rightFront, OUTPUT);
   pinMode(rightBack, OUTPUT);
 
-  // digitalWrite(enLeft, HIGH);
-  // digitalWrite(enRight, HIGH);
+  pinMode(trigPin, OUTPUT);  // ตั้งค่า Trig เป็น OUTPUT
+  pinMode(echoPin, INPUT);   // ตั้งค่า Echo เป็น INPUT
+}
 
-  // เริ่มการตั้งค่าเริ่มต้น
-  // Serial.println("Enter initial motor speed (0-255):");
+int detectFlashes() {
+  int flashCount = 0;
+  unsigned long startTime = millis();  // เก็บเวลาที่เริ่มต้นตรวจจับแฟลช
+  int threshold = 600;                 // ค่าความเข้มแสงที่บ่งบอกว่ามีแฟลช (ปรับตามความเหมาะสม)
+  int ldrValue, lastLdrValue;
+  bool flashActive = false;
+  unsigned long lastFlashTime = 0;  // เวลาเมื่อแฟลชถูกตรวจจับครั้งล่าสุด
+  int debounceDelay = 300;          // หน่วงเวลาหลังตรวจจับแฟลช (300ms ป้องกันการตรวจจับซ้ำ)
+
+  lastLdrValue = analogRead(photoResistorPin);  // อ่านค่าเริ่มต้นจาก LDR
+
+  while (millis() - startTime < 5000) {       // รอการตรวจจับแฟลชเป็นเวลา 5 วินาที
+    ldrValue = analogRead(photoResistorPin);  // อ่านค่าปัจจุบันจาก LDR
+
+    // ตรวจจับการเปิดแฟลชจากการที่ค่าความเข้มแสงลดลงต่ำกว่า threshold (มีแฟลช)
+    if (ldrValue < threshold && !flashActive && millis() - lastFlashTime > debounceDelay) {
+      flashActive = true;  // ตั้งค่าว่ามีแฟลชเปิดอยู่
+      flashCount++;
+      Serial.println("Flash detected!");
+      lastFlashTime = millis();  // เก็บเวลาที่ตรวจจับแฟลช
+    }
+    // ตรวจจับการปิดแฟลช (ค่าความเข้มแสงกลับมาสูงกว่า threshold)
+    else if (ldrValue >= threshold && flashActive) {
+      flashActive = false;  // ตั้งค่าว่าแฟลชปิดแล้ว
+    }
+
+    lastLdrValue = ldrValue;  // เก็บค่าล่าสุดไว้เพื่อเปรียบเทียบในรอบถัดไป
+  }
+
+  return flashCount;
 }
 
 void loop() {
+  long duration, distance;
 
-  read_sensor_value();
+  // เคลียร์ค่า Trig Pin
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+
+  // ส่ง Pulse
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+
+  // อ่านค่า Echo Pin
+  duration = pulseIn(echoPin, HIGH);
+
+  // คำนวณระยะทาง (cm)
+  distance = duration * 0.034 / 2;
+
+  int sensorValue = analogRead(photoResistorPin);
+  // Serial.println(sensorValue);
+  // Serial.print(distance);
+  // Serial.println(" cm");
+  if (distance <= 20 && distance > 5) {
+    Serial.println("SLOW");
+    slow = true;
+  }
+  if (distance <= 5) {
+    Serial.println("STOP");
+    stop = true;
+  } else {
+    read_sensor_value();
+  }
   calculate_pid();
   motor_control();
   monitor_value();
-  if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
-    stop_car();
-  }
-  // } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+  // // if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
+  // //   stop_car();
+  // }
+  // // } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
   //   //ไปข้างหน้าต่อ 1 วิ ถ้าไม่เจออะไรให้ถอยหลังกลับมาที่เดิม (ระยะทางเท่ากับที่เดินตอนอยู่บนสีขาว)
   //   forwardOneSec();
   //   // delay(1000);       // รอ 1 วินาที
@@ -73,88 +138,128 @@ void read_sensor_value() {
 
   for (int i = 0; i < 5; i++) {
     // ปรับค่า analog เป็น digital ตามเงื่อนไข
-    if (sensorValues[i] >= 750) {
+    if (sensorValues[i] >= 600) {
       digitalValues[i] = 0;  // digital = 0 สำหรับพื้นที่สีขาว
-    } else if (sensorValues[i] <= 749) {
+    } else if (sensorValues[i] <= 599) {
       digitalValues[i] = 1;  // digital = 1 สำหรับพื้นที่สีดำ
     }
   }
 
-  // for (int i = 0; i < 5; i++) {
-  //   Serial.print(digitalValues[i]);
-  //   Serial.print("\t");
-  // }
-  // Serial.println();
+  for (int i = 0; i < 5; i++) {
+    Serial.print(sensorValues[i]);
+    Serial.print("\t");
+  }
+  Serial.println();
 
   if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
-    stop_car();
+    Serial.println("CarStop");
+    stop = true;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 1)) {
+    Serial.println("Case-4");
     error = -4;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
+    Serial.println("Case-3");
     error = -3;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 1) && (digitalValues[0] == 0)) {
+    Serial.println("Case-2");
     error = -2;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 0)) {
+    Serial.println("TurnRight");
     error = -1;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+    Serial.println("Go");
     error = 0;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+    Serial.println("TurnLeft");
     error = 1;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 1) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+    Serial.println("Case2");
     error = 2;
   } else if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+    Serial.println("Case3");
     error = 3;
   } else if ((digitalValues[4] == 1) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+    Serial.println("Case4");
     error = 4;
-  } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 1)) {
-    if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
-      error = -6;
-    }
-  } else if ((digitalValues[4] == 1) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
-    if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
-      error = -6;
-    }
   } else if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
+    Serial.println("Case5"); // 90
     error = 5;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
+    Serial.println("Case-5"); // 90
     error = -5;
+  } else if (digitalValues[0] == 1) {
+    Serial.println("Case-6");
+    error = -6;
+  } else if (digitalValues[4] == 1) {
+    Serial.println("Case6");
+    error = 6;
   }
 }
 
 void calculate_pid() {
-
   P = error;
-  I += error;  // ใช้ค่า error ปัจจุบันในการคำนวณ I
-
+  unsigned long currentTime = millis();
+  unsigned long deltaTime = currentTime - previousTime;
+  if (deltaTime == 0) deltaTime = 1;  // ป้องกันการหารด้วยศูนย์
+  I += (error * deltaTime);
   // จำกัดค่า I ไม่ให้สูงหรือต่ำเกินไป
-  // I = constrain(I, I_min, I_max);
+  I = constrain(I, I_min, I_max);
+  if (error == 0) {
+    I = 0;
+  }
+  // kp น้อย หลุดโค้ง kp มาก เลี้ยวเยอะ ส่ายมาก kd ใช้ต้านถ้า kp เลี้ยวมากไป ดูค่า error ki ทำให้รถวิ่งเข้าใกล้ 0
+  // คำนวณค่า Derivative term
+  D = (error - previous_error) / deltaTime;
 
-  D = error - previous_error;
+  // ใช้ Low-pass filter เพื่อลด noise ในค่า D
+  D = alpha * D + (1 - alpha) * previous_D;
 
   PID_value = (Kp * P) + (Ki * I) + (Kd * D);
 
+  previousTime = currentTime;
   previous_error = error;
+  previous_D = D;
 }
 
 void motor_control() {
-  float left_moter_speed = initial_moter_speed - PID_value;
-  float right_moter_speed = initial_moter_speed + PID_value;
+  float left_moter_speed, right_moter_speed;
+  if (slow) {
+    left_moter_speed = 80 - PID_value;
+    right_moter_speed = 80 + PID_value;
+    slow = false;
+  } else {
+    left_moter_speed = initial_moter_speed - PID_value;
+    right_moter_speed = initial_moter_speed + PID_value;
+  }
 
   left_moter_speed = constrain(left_moter_speed, 0, 255);
   right_moter_speed = constrain(right_moter_speed, 0, 255);
 
   // Serial.print("left_moter_speed = ");
-  // Serial.println(left_moter_speed+18);
+  // Serial.println(left_moter_speed);
   // Serial.print("right_moter_speed = ");
   // Serial.println(right_moter_speed);
-
   analogWrite(enLeft, left_moter_speed);
   analogWrite(enRight, right_moter_speed);
 
-  digitalWrite(leftFront, HIGH);
-  digitalWrite(leftBack, LOW);
-  digitalWrite(rightFront, HIGH);
-  digitalWrite(rightBack, LOW);
+  if (stop) {
+    digitalWrite(leftFront, LOW);
+    digitalWrite(leftBack, LOW);
+    digitalWrite(rightFront, LOW);
+    digitalWrite(rightBack, LOW);
+    stop = false;
+  } else {
+    digitalWrite(leftFront, HIGH);
+    digitalWrite(leftBack, LOW);
+    digitalWrite(rightFront, HIGH);
+    digitalWrite(rightBack, LOW);
+  }
+  if (error == 6 || error == -6) {
+    delay(350);
+  }
+  else if( error == -5 || error == 5){
+    delay(900);
+  }
   // delay(90);
 }
 
@@ -169,34 +274,28 @@ void motor_control() {
 //   }
 // }
 
-void stop_car() {
-  digitalWrite(leftFront, LOW);
-  digitalWrite(leftBack, LOW);
-  digitalWrite(rightFront, LOW);
-  digitalWrite(rightBack, LOW);
-}
 
-void forwardOneSec() {
-  analogWrite(enLeft, 75);
-  analogWrite(enRight, 95);
-  digitalWrite(leftFront, HIGH);
-  digitalWrite(leftBack, LOW);
-  digitalWrite(rightFront, HIGH);
-  digitalWrite(rightBack, LOW);
-  delay(1000);  // ขับไปข้างหน้า 1 วินาที
-  stop_car();   // หยุดรถ
-}
+// void forwardOneSec() {
+//   analogWrite(enLeft, 75);
+//   analogWrite(enRight, 95);
+//   digitalWrite(leftFront, HIGH);
+//   digitalWrite(leftBack, LOW);
+//   digitalWrite(rightFront, HIGH);
+//   digitalWrite(rightBack, LOW);
+//   delay(1000);  // ขับไปข้างหน้า 1 วินาที
+//   stop_car();   // หยุดรถ
+// }
 
-void backwardOneSec() {
-  analogWrite(enLeft, 75);
-  analogWrite(enRight, 95);
-  digitalWrite(leftFront, LOW);
-  digitalWrite(leftBack, HIGH);
-  digitalWrite(rightFront, LOW);
-  digitalWrite(rightBack, HIGH);
-  delay(1000);  // ถอยหลัง 1 วินาที
-  stop_car();   // หยุดรถ
-}
+// void backwardOneSec() {
+//   analogWrite(enLeft, 75);
+//   analogWrite(enRight, 95);
+//   digitalWrite(leftFront, LOW);
+//   digitalWrite(leftBack, HIGH);
+//   digitalWrite(rightFront, LOW);
+//   digitalWrite(rightBack, HIGH);
+//   delay(1000);  // ถอยหลัง 1 วินาที
+//   stop_car();   // หยุดรถ
+// }
 
 void monitor_value() {
   // for (int i = 0; i < 5; i++) {
@@ -209,14 +308,16 @@ void monitor_value() {
   // Serial.print("Error = ");
   // Serial.println(error);
   // Serial.print("PID_value = ");
-  Serial.println(Kp);
-  Serial.println(Ki);
-  Serial.println(Kd);
-  Serial.println(PID_value);
+  // Serial.println(Kp);
+  // Serial.println(Ki);
+  // Serial.println(Kd);
+  // Serial.println(PID_value);
   // // Serial.println(P);
   // // Serial.println(I);
   // // Serial.println(D);
-  Serial.println(initial_moter_speed);
+  // Serial.println(initial_moter_speed);
+  // // Serial.println(millis());
+  // Serial.println();
 
   // delay(2000);
 }
