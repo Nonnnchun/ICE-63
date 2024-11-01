@@ -1,13 +1,8 @@
 int led[8]={11,10,9,8,7,6,5,4};
 
+
 int stopButton = 3;
 int resetButton = 2;
-
-int stopButtonState ;
-int resetButtonState ;
-
-int lastStopState = LOW;
-int lastResetState = LOW;
 
 bool isCount = false;
 
@@ -15,7 +10,7 @@ uint8_t a = 0;
 
 unsigned long long lastDebounceTime = 0;
 unsigned long long lastStopButtonTime = 0;
-int debounceDelay = 100;
+int debounceDelay = 200;
 //bitRead(variable,position); --> return 0, 1
 
 void setup()
@@ -53,7 +48,7 @@ void count(){
 
 
 void stop(){
-  if (digitalRead(stopButton) && millis() - lastStopButtonTime >= 200) {
+  if (digitalRead(stopButton) && millis() - lastStopButtonTime >= debounceDelay) {
   	lastStopButtonTime = millis();
     isCount = !isCount;
     Serial.println("stop");
@@ -63,7 +58,7 @@ void stop(){
 void reset(){
   int readingReset = digitalRead(resetButton);
   
-  if (readingReset && millis() - lastStopButtonTime >= 200) {
+  if (readingReset && millis() - lastStopButtonTime >= debounceDelay) {
   	lastStopButtonTime = millis();
     a = 0;
     Serial.println("reset");

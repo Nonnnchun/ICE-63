@@ -1,10 +1,10 @@
 //----------------------------------------------------------Tester Ep.1000000--------------------------------------------------------------
 
 // Arduino Line Follower Robot Code
-const int photoResistorPin = A5;  // ขาเชื่อมต่อของ photoresistor
-const int trigPin = 12;           // ขา Trig
-const int echoPin = 13;           // ขา Echo
-float Kp = 16.5, Ki = 0.0, Kd = 1.2;  //0.012 5
+const int photoResistorPin = A5;        // ขาเชื่อมต่อของ photoresistor
+const int trigPin = 12;                 // ขา Trig
+const int echoPin = 13;                 // ขา Echo
+float Kp = 18.6, Ki = 0.0, Kd = 1.575;  //0.012 5
 float error = 0, P = 0, I = 0, D = 0, PID_value = 0;
 float I_max = -10;  // ค่าขีดจำกัดสูงสุดสำหรับ I
 float I_min = 10;   // ค่าขีดจำกัดต่ำสุดสำหรับ I
@@ -13,7 +13,7 @@ float previous_D = 0;  // เก็บค่า D ก่อนหน้าเพ
 float alpha = 0.1;     // ค่าคงที่สำหรับ low-pass filter (ระหว่าง 0 ถึง 1)
 int sensorValues[5];   // ตัวแปรเก็บค่าที่อ่านจากเซ็นเซอร์
 int digitalValues[5];  // ตัวแปรเก็บค่าที่แสดงเป็น digital (0 หรือ 1)
-int initial_moter_speed = 100;
+int initial_moter_speed = 80;
 
 unsigned long previousMillis = 0;  // ตัวแปรสำหรับเก็บเวลา
 unsigned long previousTime = 0;    // ตัวแปรสำหรับเก็บเวลา
@@ -24,7 +24,6 @@ bool slow = false;
 void read_sensor_value(void);
 void calculate_pid(void);
 void motor_control(void);
-void stop_car(void);
 
 #define enLeft 6     //enLeftble1 L293 Pin enLeft
 #define leftFront 8  //Motor1  L293 Pin leftFront
@@ -52,7 +51,7 @@ void setup() {
 int detectFlashes() {
   int flashCount = 0;
   unsigned long startTime = millis();  // เก็บเวลาที่เริ่มต้นตรวจจับแฟลช
-  int threshold = 600;                 // ค่าความเข้มแสงที่บ่งบอกว่ามีแฟลช (ปรับตามความเหมาะสม)
+  int threshold = 400;                 // ค่าความเข้มแสงที่บ่งบอกว่ามีแฟลช (ปรับตามความเหมาะสม)
   int ldrValue, lastLdrValue;
   bool flashActive = false;
   unsigned long lastFlashTime = 0;  // เวลาเมื่อแฟลชถูกตรวจจับครั้งล่าสุด
@@ -100,7 +99,7 @@ void loop() {
   distance = duration * 0.034 / 2;
 
   int sensorValue = analogRead(photoResistorPin);
-  // Serial.println(sensorValue);
+  Serial.println(sensorValue);
   // Serial.print(distance);
   // Serial.println(" cm");
   if (distance <= 20 && distance > 5) {
@@ -115,18 +114,6 @@ void loop() {
   }
   calculate_pid();
   motor_control();
-  monitor_value();
-  // // if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
-  // //   stop_car();
-  // }
-  // // } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
-  //   //ไปข้างหน้าต่อ 1 วิ ถ้าไม่เจออะไรให้ถอยหลังกลับมาที่เดิม (ระยะทางเท่ากับที่เดินตอนอยู่บนสีขาว)
-  //   forwardOneSec();
-  //   // delay(1000);       // รอ 1 วินาที
-  //   stop_car();        // หยุดรถ
-  //   // delay(500);        // รอครึ่งวินาทีก่อนที่จะถอยหลัง
-  //   backwardOneSec();  // ถอยหลัง 1 วินาที
-  // }
 }
 
 void read_sensor_value() {
@@ -154,6 +141,33 @@ void read_sensor_value() {
   if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
     Serial.println("CarStop");
     stop = true;
+    analogWrite(enLeft, 90);
+    analogWrite(enRight, 90);
+    digitalWrite(leftFront, LOW);
+    digitalWrite(leftBack, LOW);
+    digitalWrite(rightFront, LOW);
+    digitalWrite(rightBack, LOW);
+
+    Serial.println("Intersection detected. Waiting for flash signal...");
+
+    // รอการตรวจจับแฟลช
+    int flashes = detectFlashes();
+
+    if (flashes == 1) {
+      Serial.println("Turning left based on 1 flash.");
+      digitalWrite(leftFront, LOW);
+      digitalWrite(leftBack, LOW);
+      digitalWrite(rightFront, HIGH);
+      digitalWrite(rightBack, LOW);
+      delay(1750);  // รอให้เลี้ยวเสร็จ
+    } else if (flashes >= 2) {
+      Serial.println("Turning right based on 2 flashes.");
+      digitalWrite(leftFront, HIGH);
+      digitalWrite(leftBack, LOW);
+      digitalWrite(rightFront, LOW);
+      digitalWrite(rightBack, LOW);
+      delay(1750);  // รอให้เลี้ยวเสร็จ
+    }
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 0) && (digitalValues[1] == 0) && (digitalValues[0] == 1)) {
     Serial.println("Case-4");
     error = -4;
@@ -182,10 +196,10 @@ void read_sensor_value() {
     Serial.println("Case4");
     error = 4;
   } else if ((digitalValues[4] == 1) && (digitalValues[3] == 1) && (digitalValues[2] == 1) && (digitalValues[1] == 0) && (digitalValues[0] == 0)) {
-    Serial.println("Case5"); // 90
+    Serial.println("Case5");  // 90
     error = 5;
   } else if ((digitalValues[4] == 0) && (digitalValues[3] == 0) && (digitalValues[2] == 1) && (digitalValues[1] == 1) && (digitalValues[0] == 1)) {
-    Serial.println("Case-5"); // 90
+    Serial.println("Case-5");  // 90
     error = -5;
   } else if (digitalValues[0] == 1) {
     Serial.println("Case-6");
@@ -235,10 +249,6 @@ void motor_control() {
   left_moter_speed = constrain(left_moter_speed, 0, 255);
   right_moter_speed = constrain(right_moter_speed, 0, 255);
 
-  // Serial.print("left_moter_speed = ");
-  // Serial.println(left_moter_speed);
-  // Serial.print("right_moter_speed = ");
-  // Serial.println(right_moter_speed);
   analogWrite(enLeft, left_moter_speed);
   analogWrite(enRight, right_moter_speed);
 
@@ -254,70 +264,4 @@ void motor_control() {
     digitalWrite(rightFront, HIGH);
     digitalWrite(rightBack, LOW);
   }
-  if (error == 6 || error == -6) {
-    delay(350);
-  }
-  else if( error == -5 || error == 5){
-    delay(900);
-  }
-  // delay(90);
-}
-
-// void set_initial_speed(int speed) {
-//   if (speed >= 0 && speed <= 255) {
-//     initial_moter_speed = speed;
-//     Serial.print("Initial motor speed set to: ");
-//     Serial.println(initial_moter_speed);
-//   } else {
-//     Serial.println("Invalid speed! Please enter a value between 0 and 255.");
-//     initial_moter_speed = constrain(initial_moter_speed, 0, 255);  // ตรวจสอบให้แน่ใจว่าอยู่ในขอบเขต
-//   }
-// }
-
-
-// void forwardOneSec() {
-//   analogWrite(enLeft, 75);
-//   analogWrite(enRight, 95);
-//   digitalWrite(leftFront, HIGH);
-//   digitalWrite(leftBack, LOW);
-//   digitalWrite(rightFront, HIGH);
-//   digitalWrite(rightBack, LOW);
-//   delay(1000);  // ขับไปข้างหน้า 1 วินาที
-//   stop_car();   // หยุดรถ
-// }
-
-// void backwardOneSec() {
-//   analogWrite(enLeft, 75);
-//   analogWrite(enRight, 95);
-//   digitalWrite(leftFront, LOW);
-//   digitalWrite(leftBack, HIGH);
-//   digitalWrite(rightFront, LOW);
-//   digitalWrite(rightBack, HIGH);
-//   delay(1000);  // ถอยหลัง 1 วินาที
-//   stop_car();   // หยุดรถ
-// }
-
-void monitor_value() {
-  // for (int i = 0; i < 5; i++) {
-  //   Serial.print(digitalValues[i]);
-  //   Serial.print("\t");
-  // }
-  // Serial.println();
-
-  // Serial.println();
-  // Serial.print("Error = ");
-  // Serial.println(error);
-  // Serial.print("PID_value = ");
-  // Serial.println(Kp);
-  // Serial.println(Ki);
-  // Serial.println(Kd);
-  // Serial.println(PID_value);
-  // // Serial.println(P);
-  // // Serial.println(I);
-  // // Serial.println(D);
-  // Serial.println(initial_moter_speed);
-  // // Serial.println(millis());
-  // Serial.println();
-
-  // delay(2000);
 }
